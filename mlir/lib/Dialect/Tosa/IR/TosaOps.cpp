@@ -503,94 +503,96 @@ LogicalResult tosa::ArgMaxOp::verify() {
   return success();
 }
 
-template <typename T>
-static LogicalResult verifyPoolingOp(T op) {
-  const llvm::ArrayRef<int64_t> kernel = op.getKernel();
-  if (llvm::any_of(kernel, [](int64_t s) { return s < 1; }))
-    return op.emitOpError("expect all kernel values to be >= 1, got ")
-           << kernel;
+// template <typename T>
+// static LogicalResult verifyPoolingOp(T op) {
+//   const llvm::ArrayRef<int64_t> kernel = op.getKernel();
+//   if (llvm::any_of(kernel, [](int64_t s) { return s < 1; }))
+//     return op.emitOpError("expect all kernel values to be >= 1, got ")
+//            << kernel;
 
-  const llvm::ArrayRef<int64_t> strides = op.getStride();
-  if (llvm::any_of(strides, [](int64_t s) { return s < 1; }))
-    return op.emitOpError("expect all stride values to be >= 1, got ")
-           << strides;
+//   const llvm::ArrayRef<int64_t> strides = op.getStride();
+//   if (llvm::any_of(strides, [](int64_t s) { return s < 1; }))
+//     return op.emitOpError("expect all stride values to be >= 1, got ")
+//            << strides;
 
-  const llvm::ArrayRef<int64_t> padding = op.getPad();
-  if (llvm::any_of(padding, [](int64_t p) { return p < 0; }))
-    return op.emitOpError("expect all padding values to be >= 0, got ")
-           << padding;
+//   const llvm::ArrayRef<int64_t> padding = op.getPad();
+//   if (llvm::any_of(padding, [](int64_t p) { return p < 0; }))
+//     return op.emitOpError("expect all padding values to be >= 0, got ")
+//            << padding;
 
-  // Padding must be less than kernel size to avoid a divide-by-zero
-  const int64_t kernelX = kernel[1];
-  const int64_t padLeft = padding[2];
-  const int64_t padRight = padding[3];
-  if (padRight >= kernelX || padLeft >= kernelX)
-    return op.emitOpError("expected left/right padding to be less than the "
-                          "width of the kernel, got pad_left=")
-           << padLeft << ", pad_right=" << padRight << ", kernel_x=" << kernelX;
+//   // Padding must be less than kernel size to avoid a divide-by-zero
+//   const int64_t kernelX = kernel[1];
+//   const int64_t padLeft = padding[2];
+//   const int64_t padRight = padding[3];
+//   if (padRight >= kernelX || padLeft >= kernelX)
+//     return op.emitOpError("expected left/right padding to be less than the "
+//                           "width of the kernel, got pad_left=")
+//            << padLeft << ", pad_right=" << padRight << ", kernel_x=" <<
+//            kernelX;
 
-  const int64_t kernelY = kernel[0];
-  const int64_t padTop = padding[0];
-  const int64_t padBottom = padding[1];
-  if (padTop >= kernelY || padBottom >= kernelY)
-    return op.emitOpError("expected top/bottom padding to be less than the "
-                          "height of the kernel, got pad_top=")
-           << padTop << ", pad_bottom=" << padBottom
-           << ", kernel_y=" << kernelY;
+//   const int64_t kernelY = kernel[0];
+//   const int64_t padTop = padding[0];
+//   const int64_t padBottom = padding[1];
+//   if (padTop >= kernelY || padBottom >= kernelY)
+//     return op.emitOpError("expected top/bottom padding to be less than the "
+//                           "height of the kernel, got pad_top=")
+//            << padTop << ", pad_bottom=" << padBottom
+//            << ", kernel_y=" << kernelY;
 
-  const auto inputType =
-      llvm::dyn_cast<RankedTensorType>(op.getInput().getType());
-  const auto outputType =
-      llvm::dyn_cast<RankedTensorType>(op.getResult().getType());
-  if (!inputType || !outputType)
-    return success();
+//   const auto inputType =
+//       llvm::dyn_cast<RankedTensorType>(op.getInput().getType());
+//   const auto outputType =
+//       llvm::dyn_cast<RankedTensorType>(op.getResult().getType());
+//   if (!inputType || !outputType)
+//     return success();
 
-  const auto verifyOutputSize =
-      [&op](const int64_t inputSize, const int64_t outputSize,
-            const int64_t kernelSize, const int64_t strideSize,
-            const int64_t padBefore, const int64_t padAfter,
-            const llvm::StringRef dimName, const llvm::StringRef dimAxis,
-            const llvm::StringRef padBeforeName,
-            const llvm::StringRef padAfterName) -> LogicalResult {
-    if (ShapedType::isDynamic(inputSize))
-      return success();
+//   const auto verifyOutputSize =
+//       [&op](const int64_t inputSize, const int64_t outputSize,
+//             const int64_t kernelSize, const int64_t strideSize,
+//             const int64_t padBefore, const int64_t padAfter,
+//             const llvm::StringRef dimName, const llvm::StringRef dimAxis,
+//             const llvm::StringRef padBeforeName,
+//             const llvm::StringRef padAfterName) -> LogicalResult {
+//     if (ShapedType::isDynamic(inputSize))
+//       return success();
 
-    const std::optional<int64_t> calculatedOutSizeMinusOne =
-        idivCheck(inputSize + padBefore + padAfter - kernelSize, strideSize);
-    if (!calculatedOutSizeMinusOne.has_value())
-      return op.emitOpError("expected input_")
-             << dimName << " + pad_" << padBeforeName << " + pad_"
-             << padAfterName << " - kernel_" << dimAxis
-             << " to be wholly divisible by stride_" << dimAxis << ", got ("
-             << inputSize << " + " << padBefore << " + " << padAfter << " - "
-             << kernelSize << ") / " << strideSize;
+//     const std::optional<int64_t> calculatedOutSizeMinusOne =
+//         idivCheck(inputSize + padBefore + padAfter - kernelSize, strideSize);
+//     if (!calculatedOutSizeMinusOne.has_value())
+//       return op.emitOpError("expected input_")
+//              << dimName << " + pad_" << padBeforeName << " + pad_"
+//              << padAfterName << " - kernel_" << dimAxis
+//              << " to be wholly divisible by stride_" << dimAxis << ", got ("
+//              << inputSize << " + " << padBefore << " + " << padAfter << " - "
+//              << kernelSize << ") / " << strideSize;
 
-    const int64_t calculatedOutSize = calculatedOutSizeMinusOne.value() + 1;
-    if (!ShapedType::isDynamic(outputSize) && calculatedOutSize != outputSize)
-      return op.emitOpError("calculated output ")
-             << dimName << " did not match expected: "
-             << "calculated=" << calculatedOutSize
-             << ", expected=" << outputSize;
+//     const int64_t calculatedOutSize = calculatedOutSizeMinusOne.value() + 1;
+//     if (!ShapedType::isDynamic(outputSize) && calculatedOutSize !=
+//     outputSize)
+//       return op.emitOpError("calculated output ")
+//              << dimName << " did not match expected: "
+//              << "calculated=" << calculatedOutSize
+//              << ", expected=" << outputSize;
 
-    return success();
-  };
+//     return success();
+//   };
 
-  if (failed(verifyOutputSize(inputType.getDimSize(1), outputType.getDimSize(1),
-                              kernel[0], strides[0], padding[0], padding[1],
-                              "height", "y", "top", "bottom")))
-    return failure();
+//   if (failed(verifyOutputSize(inputType.getDimSize(1),
+//   outputType.getDimSize(1),
+//                               kernel[0], strides[0], padding[0], padding[1],
+//                               "height", "y", "top", "bottom")))
+//     return failure();
 
-  if (failed(verifyOutputSize(inputType.getDimSize(2), outputType.getDimSize(2),
-                              kernel[1], strides[1], padding[2], padding[3],
-                              "width", "x", "left", "right")))
-    return failure();
+//   if (failed(verifyOutputSize(inputType.getDimSize(2),
+//   outputType.getDimSize(2),
+//                               kernel[1], strides[1], padding[2], padding[3],
+//                               "width", "x", "left", "right")))
+//     return failure();
 
-  return success();
-}
+//   return success();
+// }
 
 LogicalResult tosa::AvgPool2dOp::verify() {
-  if (failed(verifyPoolingOp(*this)))
-    return failure();
 
   const Type inputETy = getStorageElementTypeOrSelf(getInput().getType());
   const Type resultETy = getStorageElementTypeOrSelf(getOutput().getType());
@@ -2111,86 +2113,95 @@ LogicalResult tosa::ResizeOp::inferReturnTypeComponents(
 }
 
 LogicalResult tosa::ResizeOp::verify() {
-  const Value input = getInput();
-  const Value output = getOutput();
-  const RankedTensorType inputType =
-      llvm::dyn_cast<RankedTensorType>(input.getType());
-  const RankedTensorType outputType =
-      llvm::dyn_cast<RankedTensorType>(output.getType());
+  //   const Value input = getInput();
+  //   const Value output = getOutput();
+  //   const RankedTensorType inputType =
+  //       llvm::dyn_cast<RankedTensorType>(input.getType());
+  //   const RankedTensorType outputType =
+  //       llvm::dyn_cast<RankedTensorType>(output.getType());
 
-  if (!inputType)
-    return emitOpError("expect a ranked input tensor");
-  if (!outputType)
-    return emitOpError("expect a ranked output tensor");
+  //   if (!inputType)
+  //     return emitOpError("expect a ranked input tensor");
+  //   if (!outputType)
+  //     return emitOpError("expect a ranked output tensor");
 
-  const int64_t oh = outputType.getDimSize(1);
-  const int64_t ow = outputType.getDimSize(2);
-  const int64_t ih = inputType.getDimSize(1);
-  const int64_t iw = inputType.getDimSize(2);
+  //   const int64_t oh = outputType.getDimSize(1);
+  //   const int64_t ow = outputType.getDimSize(2);
+  //   const int64_t ih = inputType.getDimSize(1);
+  //   const int64_t iw = inputType.getDimSize(2);
 
-  SmallVector<int64_t> scaleValues;
-  SmallVector<int64_t> offsetValues;
-  SmallVector<int64_t> borderValues;
-  if (!tosa::getConstShapeValues(getScale().getDefiningOp(), scaleValues) ||
-      !tosa::getConstShapeValues(getOffset().getDefiningOp(), offsetValues) ||
-      !tosa::getConstShapeValues(getBorder().getDefiningOp(), borderValues)) {
-    // Skip following checks if shape is not constant
-    return success();
-  }
+  //   SmallVector<int64_t> scaleValues;
+  //   SmallVector<int64_t> offsetValues;
+  //   SmallVector<int64_t> borderValues;
+  //   if (!tosa::getConstShapeValues(getScale().getDefiningOp(), scaleValues)
+  //   ||
+  //       !tosa::getConstShapeValues(getOffset().getDefiningOp(), offsetValues)
+  //       || !tosa::getConstShapeValues(getBorder().getDefiningOp(),
+  //       borderValues)) {
+  //     // Skip following checks if shape is not constant
+  //     return success();
+  //   }
 
-  if (llvm::any_of(scaleValues, [](int64_t s) { return s <= 0; }))
-    return emitOpError("expect all scale values to be > 0, got ")
-           << scaleValues;
+  //   if (llvm::any_of(scaleValues, [](int64_t s) { return s <= 0; }))
+  //     return emitOpError("expect all scale values to be > 0, got ")
+  //            << scaleValues;
 
-  const int64_t scaleYN = scaleValues[0];
-  const int64_t scaleYD = scaleValues[1];
-  const int64_t scaleXN = scaleValues[2];
-  const int64_t scaleXD = scaleValues[3];
+  //   const int64_t scaleYN = scaleValues[0];
+  //   const int64_t scaleYD = scaleValues[1];
+  //   const int64_t scaleXN = scaleValues[2];
+  //   const int64_t scaleXD = scaleValues[3];
 
-  const int64_t offsetY = offsetValues[0];
-  const int64_t offsetX = offsetValues[1];
+  //   const int64_t offsetY = offsetValues[0];
+  //   const int64_t offsetX = offsetValues[1];
 
-  const int64_t borderY = borderValues[0];
-  const int64_t borderX = borderValues[1];
+  //   const int64_t borderY = borderValues[0];
+  //   const int64_t borderX = borderValues[1];
 
-  // Don't check with input height that could be broadcast (ih != 1)
-  // since Linalg, a consumer of TOSA, expects broadcasting support
-  // in resize to be available. Taking the cautious approach for now,
-  // we can consider removing support for broadcasting later.
-  if (ih != ShapedType::kDynamic && ih != 1) {
-    const std::optional<int64_t> calculatedOutHeightMinusOne =
-        idivCheck((ih - 1) * scaleYN - offsetY + borderY, scaleYD);
-    if (!calculatedOutHeightMinusOne.has_value())
-      return emitOpError("expected (input_height - 1) * scale_y_n - offset_y + "
-                         "border_y ")
-             << "to be wholly divisible by scale_y_d, got ((" << ih
-             << " - 1) * " << scaleYN << " - " << offsetY << " + " << borderY
-             << ") / " << scaleYD;
-    const int64_t calculatedOutHeight = calculatedOutHeightMinusOne.value() + 1;
-    if (oh != ShapedType::kDynamic && calculatedOutHeight != oh)
-      return emitOpError("calculated output height did not match expected: ")
-             << "calculated=" << calculatedOutHeight << ", expected=" << oh;
-  }
+  //   // Don't check with input height that could be broadcast (ih != 1)
+  //   // since Linalg, a consumer of TOSA, expects broadcasting support
+  //   // in resize to be available. Taking the cautious approach for now,
+  //   // we can consider removing support for broadcasting later.
+  //   if (ih != ShapedType::kDynamic && ih != 1) {
+  //     const std::optional<int64_t> calculatedOutHeightMinusOne =
+  //         idivCheck((ih - 1) * scaleYN - offsetY + borderY, scaleYD);
+  //     if (!calculatedOutHeightMinusOne.has_value())
+  //       return emitOpError("expected (input_height - 1) * scale_y_n -
+  //       offset_y + "
+  //                          "border_y ")
+  //              << "to be wholly divisible by scale_y_d, got ((" << ih
+  //              << " - 1) * " << scaleYN << " - " << offsetY << " + " <<
+  //              borderY
+  //              << ") / " << scaleYD;
+  //     const int64_t calculatedOutHeight = calculatedOutHeightMinusOne.value()
+  //     + 1; if (oh != ShapedType::kDynamic && calculatedOutHeight != oh)
+  //       return emitOpError("calculated output height did not match expected:
+  //       ")
+  //              << "calculated=" << calculatedOutHeight << ", expected=" <<
+  //              oh;
+  //   }
 
-  // Don't check with input width that could be broadcast (iw != 1)
-  // since Linalg, a consumer of TOSA, expects broadcasting support
-  // in resize to be available. Taking the cautious approach for now,
-  // we can consider removing support for broadcasting later.
-  if (iw != ShapedType::kDynamic && iw != 1) {
-    const int64_t scaledInWidth = (iw - 1) * scaleXN - offsetX + borderX;
-    const std::optional<int64_t> calculatedOutWidthMinusOne =
-        idivCheck(scaledInWidth, scaleXD);
-    if (!calculatedOutWidthMinusOne.has_value())
-      return emitOpError("expected (input_width - 1) * scale_x_n - offset_x + "
-                         "border_x ")
-             << "to be wholly divisible by scale_x_d, got ((" << iw
-             << " - 1) * " << scaleXN << " - " << offsetX << " + " << borderX
-             << ") / " << scaleXD;
-    const int64_t calculatedOutWidth = calculatedOutWidthMinusOne.value() + 1;
-    if (ow != ShapedType::kDynamic && calculatedOutWidth != ow)
-      return emitOpError("calculated output width did not match expected: ")
-             << "calculated=" << calculatedOutWidth << ", expected=" << ow;
-  }
+  //   // Don't check with input width that could be broadcast (iw != 1)
+  //   // since Linalg, a consumer of TOSA, expects broadcasting support
+  //   // in resize to be available. Taking the cautious approach for now,
+  //   // we can consider removing support for broadcasting later.
+  //   if (iw != ShapedType::kDynamic && iw != 1) {
+  //     const int64_t scaledInWidth = (iw - 1) * scaleXN - offsetX + borderX;
+  //     const std::optional<int64_t> calculatedOutWidthMinusOne =
+  //         idivCheck(scaledInWidth, scaleXD);
+  //     if (!calculatedOutWidthMinusOne.has_value())
+  //       return emitOpError("expected (input_width - 1) * scale_x_n - offset_x
+  //       + "
+  //                          "border_x ")
+  //              << "to be wholly divisible by scale_x_d, got ((" << iw
+  //              << " - 1) * " << scaleXN << " - " << offsetX << " + " <<
+  //              borderX
+  //              << ") / " << scaleXD;
+  //     const int64_t calculatedOutWidth = calculatedOutWidthMinusOne.value() +
+  //     1; if (ow != ShapedType::kDynamic && calculatedOutWidth != ow)
+  //       return emitOpError("calculated output width did not match expected:
+  //       ")
+  //              << "calculated=" << calculatedOutWidth << ", expected=" << ow;
+  //   }
 
   return success();
 }
@@ -2551,97 +2562,6 @@ LogicalResult Conv2DOp::inferReturnTypeComponents(
 LogicalResult Conv2DOp::verify() {
   if (verifyConvOp(*this).failed() || verifyConvOpModes(*this).failed())
     return failure();
-
-  llvm::ArrayRef<int64_t> padding = getPad();
-  if (llvm::any_of(padding, [](int64_t p) { return p < 0; }))
-    return emitOpError("expect all padding values to be >= 0, got ") << padding;
-
-  llvm::ArrayRef<int64_t> strides = getStride();
-  if (llvm::any_of(strides, [](int64_t s) { return s < 1; }))
-    return emitOpError("expect all stride values to be >= 1, got ") << strides;
-
-  llvm::ArrayRef<int64_t> dilations = getDilation();
-  if (llvm::any_of(dilations, [](int64_t d) { return d < 1; }))
-    return emitOpError("expect all dilation values to be >= 1, got ")
-           << dilations;
-
-  const RankedTensorType outputType =
-      llvm::dyn_cast<RankedTensorType>(getOutput().getType());
-  if (!outputType)
-    // Skip following checks if output is not ranked
-    return success();
-
-  const RankedTensorType inputType =
-      llvm::dyn_cast<RankedTensorType>(getInput().getType());
-  const RankedTensorType weightType =
-      llvm::dyn_cast<RankedTensorType>(getWeight().getType());
-
-  if (inputType && weightType) {
-    const auto verifyOutputSize =
-        [this](const int64_t inputSize, const int64_t kernelSize,
-               const int64_t outputSize, const int64_t padBefore,
-               const int64_t padAfter, const int64_t stride,
-               const int64_t dilation, const llvm::StringRef dimName,
-               const llvm::StringRef dimAxis,
-               const llvm::StringRef padBeforeName,
-               const llvm::StringRef padAfterName) -> LogicalResult {
-      if (inputSize == ShapedType::kDynamic ||
-          kernelSize == ShapedType::kDynamic)
-        return success();
-
-      const std::optional<int64_t> calculatedOutSizeMinusOne = idivCheck(
-          inputSize - 1 + padBefore + padAfter - (kernelSize - 1) * dilation,
-          stride);
-      if (!calculatedOutSizeMinusOne.has_value())
-        return emitOpError("expected input_")
-               << dimName << " - 1 + pad_" << padBeforeName << " + pad_"
-               << padAfterName << " - (kernel_" << dimName
-               << " - 1) * dilation_" << dimAxis
-               << " to be wholly divisible by stride_" << dimAxis << ", got ("
-               << inputSize << " - 1 + " << padBefore << " + " << padAfter
-               << " - (" << kernelSize << " - 1) * " << dilation << ") / "
-               << stride;
-
-      const int64_t calculatedOutSize = calculatedOutSizeMinusOne.value() + 1;
-      if (outputSize != ShapedType::kDynamic && calculatedOutSize != outputSize)
-        return emitOpError("calculated output ")
-               << dimName << " did not match expected: "
-               << "calculated=" << calculatedOutSize
-               << ", expected=" << outputSize;
-
-      return success();
-    };
-
-    if (failed(verifyOutputSize(
-            inputType.getDimSize(1), weightType.getDimSize(1),
-            outputType.getDimSize(1), padding[0], padding[1], strides[0],
-            dilations[0], "height", "y", "top", "bottom")))
-      return failure();
-
-    if (failed(verifyOutputSize(
-            inputType.getDimSize(2), weightType.getDimSize(2),
-            outputType.getDimSize(2), padding[2], padding[3], strides[1],
-            dilations[1], "width", "x", "left", "right")))
-      return failure();
-  }
-
-  const RankedTensorType biasType =
-      llvm::dyn_cast<RankedTensorType>(getBias().getType());
-  if (!biasType)
-    // Skip following checks if bias is not ranked
-    return success();
-
-  const int64_t biasChannels = biasType.getDimSize(0);
-  const int64_t outputChannels = outputType.getDimSize(3);
-  if (biasChannels == ShapedType::kDynamic ||
-      outputChannels == ShapedType::kDynamic)
-    // Skip following checks if biasChannels or outputChannels is dynamic dim
-    return success();
-
-  if (biasChannels != outputChannels && biasChannels != 1)
-    return emitOpError(
-               "bias channels expected to be equal to output channels (")
-           << outputChannels << ") or 1, got " << biasChannels;
   return success();
 }
 
@@ -2745,10 +2665,6 @@ LogicalResult MaxPool2dOp::verify() {
   if (failed(verifySameElementTypes(*this, /* intype = */ getInput().getType(),
                                     /* outType = */ getOutput().getType())))
     return failure();
-
-  if (failed(verifyPoolingOp(*this)))
-    return failure();
-
   return success();
 }
 
